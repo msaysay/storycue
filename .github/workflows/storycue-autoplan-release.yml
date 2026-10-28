@@ -1,0 +1,71 @@
+name: Publish StoryCue v0.2.0 automatic desktop planning
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/storycue-autoplan-release.yml']
+permissions:
+  contents: write
+jobs:
+  publish:
+    if: github.repository == 'msaysay/storycue' && github.actor == 'msaysay'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          fetch-depth: 3
+      - name: Verify reviewed patch and previous public files
+        run: |
+          test "$(git rev-parse HEAD~2)" = '363ed58db9528a211f37b95a5c3feb8265b3ef3c'
+          python3 - <<'PY'
+          import hashlib,json,pathlib,zipfile
+          root=pathlib.Path.cwd().resolve()
+          archive=root/'storycue-autoplan-0.2.0.zip'
+          assert hashlib.sha256(archive.read_bytes()).hexdigest()=='f7ad0a38dc75416f4aa0aae361ae1e4070ee0486ab4d8926cd08b7f8d3c36399', 'Patch checksum mismatch'
+          with zipfile.ZipFile(archive)as z:
+              manifest=json.loads(z.read('patch-manifest.json'))
+              assert len(manifest)==20, 'Unexpected patch size'
+              assert set(z.namelist())=={'patch-manifest.json'}|{'StoryCue/'+p for p in manifest}, 'Unexpected members'
+              targets=[]
+              for name,expected in manifest.items():
+                  parts=pathlib.PurePosixPath(name).parts
+                  assert parts and not any(p in ('..','.git','node_modules','.storycue-data','.storycue-work') for p in parts)
+                  assert not any(p.startswith('.env') and p!='.env.example' for p in parts)
+                  target=root.joinpath(*parts).resolve()
+                  assert target.is_relative_to(root), 'Invalid target'
+                  if expected is None: assert not target.exists(), 'New file already exists'
+                  else: assert target.is_file() and hashlib.sha256(target.read_bytes()).hexdigest()==expected, 'Source changed; refusing overwrite'
+                  targets.append((target,z.read('StoryCue/'+name)))
+              for target,content in targets:
+                  target.parent.mkdir(parents=True,exist_ok=True)
+                  target.write_bytes(content)
+          archive.unlink()
+          (root/'.github/workflows/storycue-autoplan-release.yml').unlink()
+          print('Verified automatic-planning source applied; temporary publisher removed')
+          PY
+      - name: Commit tested source
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add --all
+          git commit -m 'Release 0.2.0: automatically call local WorkBuddy/CodeBuddy and Codex models'
+          git push origin HEAD:main
+      - name: Publish version and clean source download
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          test "$(git ls-files | wc -l)" -eq 93
+          git archive --format=zip --prefix=StoryCue/ -o "$RUNNER_TEMP/StoryCue-v0.2.0-source.zip" HEAD
+          cat > "$RUNNER_TEMP/storycue-release-notes.md" <<'NOTES'
+          ## Automatic desktop-AI question planning
+
+          Click Generate in the webpage to invoke the connected official local WorkBuddy/CodeBuddy or Codex CLI, validate 3-5 questions, and fill the editable outline automatically. No per-task copy/paste and no separate question-generation API key.
+
+          First-time setup: npm ci, then npm run desktop:connect -- --host workbuddy (or --host codex), complete npm run desktop:login once, and restart StoryCue. Keep .env.local, .storycue-data and existing browser interview records when upgrading. Update skills/storycue/SKILL.md too. Speech and immediate-follow-up models remain separate BYOK services.
+
+          Fixes include CodeBuddy JSON message-array parsing, incorrect quota error matching, terminal failure/timeout states, duplicate-job protection, preserved manual edits and task recovery. Authentication stays in the official CLI; the package contains no publisher keys, account files or interview history.
+
+          Validation: real Windows webpage -> CLI model -> four questions -> edit -> refresh passed for both hosts. WorkBuddy/CodeBuddy 2.178.0 with deepseek-v4.1-flash took about 21 seconds in one complete run; Codex also passed. These are individual test results, not a speed guarantee. All 11 published regression tests and the production build passed locally; 17 related development regressions passed. Other OS/CLI versions and physical-phone audio require further testing.
+
+          Source is MIT; see README for current scope and deployment requirements.
+          NOTES
+          gh release create v0.2.0 "$RUNNER_TEMP/StoryCue-v0.2.0-source.zip" --target "$(git rev-parse HEAD)" --title 'StoryCue v0.2.0 · Automatic desktop AI planning' --notes-file "$RUNNER_TEMP/storycue-release-notes.md"
