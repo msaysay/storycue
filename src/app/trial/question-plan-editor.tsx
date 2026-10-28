@@ -3,8 +3,8 @@
 import { ArrowDown, ArrowUp, Check, Loader2, Plus, Sparkles, Trash2 } from "lucide-react";
 import type { GuideItem } from "./interview-guide";
 
-export function QuestionPlanEditor({ items, focus, generating, disabled, ready, onChange, onConfirm }: {
-  items: readonly GuideItem[]; focus?: string; generating: boolean; disabled: boolean; ready: boolean;
+export function QuestionPlanEditor({ items, focus, generating, awaitingDesktop=false, disabled, ready, onChange, onConfirm }: {
+  items: readonly GuideItem[]; focus?: string; generating: boolean; awaitingDesktop?:boolean; disabled: boolean; ready: boolean;
   onChange: (items: GuideItem[]) => void; onConfirm: () => void;
 }) {
   function move(index: number, offset: number) {
@@ -15,8 +15,8 @@ export function QuestionPlanEditor({ items, focus, generating, disabled, ready, 
   return <section className="sc-panel sc-plan-editor" aria-label="生成与修改主问题" aria-busy={generating}>
     <div className="sc-panel-heading"><h2><Sparkles size={16} />主问题 · 生成后可修改</h2><small>{items.length} 题</small></div>
     <p className="sc-subtle">3～5 个主问题 · 支撑经历 → 金句提炼 → 转化承接；细节在追问中展开。</p>
-    {items.length > 5 || items.length < 3 ? <p className="sc-plan-limit" role="status">{items.length > 5 ? "旧提纲已保留。请合并或删除到 3～5 题，或重新生成精简提纲。" : "至少保留 3 个主问题，再确认提纲。"}</p> : null}
-    {generating ? <p className="sc-plan-progress" role="status"><Loader2 size={16} />正在围绕选题生成主问题与条件追问…</p> : <p className="sc-subtle">{focus || "确认左侧选题后生成，也可以直接修改已有提纲。"}</p>}
+    {!generating&&(items.length > 5 || items.length < 3) ? <p className="sc-plan-limit" role="status">{items.length > 5 ? "旧提纲已保留。请合并或删除到 3～5 题，或重新生成精简提纲。" : "至少保留 3 个主问题，再确认提纲。"}</p> : null}
+    {generating ? <p className="sc-plan-progress" role="status">{awaitingDesktop?<Sparkles size={16}/>:<Loader2 size={16}/>} {awaitingDesktop?"等待桌面 AI 回填；请先在 WorkBuddy 发送任务指令。":"正在围绕选题生成主问题与条件追问…"}</p> : <p className="sc-subtle">{focus || "确认左侧选题后生成，也可以直接修改已有提纲。"}</p>}
     <div className="sc-question-edit-list">{items.map((item, index) => <div className="sc-question-edit" key={index}>
       <div className="sc-question-edit-top"><label htmlFor={"plan-question-" + index}>{String(index + 1).padStart(2, "0")} · {item.label}</label><div>
         <button className="sc-icon-button" aria-label={"上移主问题 " + (index + 1)} disabled={disabled || generating || index === 0} onClick={() => move(index, -1)}><ArrowUp size={12} /></button>

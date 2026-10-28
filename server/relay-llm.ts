@@ -63,7 +63,7 @@ function resolvePrimaryEndpoint(): RelayLlmEndpoint {
     model,
     temperature: parseTemperature(),
     apiKey,
-    baseUrl,
+    baseUrl: baseUrl.replace(/\/+$/, ""),
     useGemini,
   };
 }
@@ -83,7 +83,7 @@ function resolveFallbackEndpoint(primary: RelayLlmEndpoint): RelayLlmEndpoint | 
     model,
     temperature: parseTemperature(),
     apiKey,
-    baseUrl,
+    baseUrl: baseUrl.replace(/\/+$/, ""),
     useGemini: false,
   };
 
@@ -213,7 +213,10 @@ async function callOpenAICompatible(
       messages: [{ role: "user", content: prompt }],
       temperature: endpoint.temperature,
       max_tokens: maxTokens,
-      ...(process.env.RELAY_LLM_THINKING === "disabled" ? { thinking: { type: "disabled" } } : {}),
+      ...((process.env.RELAY_LLM_THINKING === "disabled" ||
+        ((!process.env.RELAY_LLM_THINKING || process.env.RELAY_LLM_THINKING === "auto") &&
+          new URL(endpoint.baseUrl).hostname === "ark.cn-beijing.volces.com"))
+        ? { thinking: { type: "disabled" } } : {}),
       ...(onText ? { stream: true } : {}),
     }),
   });

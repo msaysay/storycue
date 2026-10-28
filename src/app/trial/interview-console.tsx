@@ -47,6 +47,7 @@ export function InterviewConsole({ mobile = false }: {mobile?: boolean}) {
   const [planError, setPlanError] = useState("");
   const [desktopJobId,setDesktopJobId]=useState("");
   const [desktopMode,setDesktopMode]=useState(false);
+  const [taskCopied,setTaskCopied]=useState(false);
   const [showSetup,setShowSetup]=useState(false);
   const planRequestRef = useRef<AbortController | null>(null);
   const questions = questionItems.map(item => item.question).join("\n");
@@ -102,6 +103,7 @@ export function InterviewConsole({ mobile = false }: {mobile?: boolean}) {
     try {
       const saved = PlanDraftSchema.safeParse(JSON.parse(localStorage.getItem(draftKey) || "null"));
       if (saved.success) { const draft = saved.data; setTopic(draft.topic); setFramework(draft.framework); setBackground(draft.background); setQuestionItems(draft.items); setPlanMeta(draft.meta); }
+      const job=localStorage.getItem(draftKey+".desktopJob");if(job&&/^[0-9a-f-]{36}$/.test(job))setDesktopJobId(job);
     } catch { setPlanError("提纲草稿无法读取，已保留默认提纲。"); }
     return () => planRequestRef.current?.abort();
   }, [draftKey]);
@@ -110,6 +112,11 @@ export function InterviewConsole({ mobile = false }: {mobile?: boolean}) {
     try { localStorage.setItem(draftKey, JSON.stringify({ topic, framework, background, items: questionItems, meta: planMeta })); }
     catch { setPlanError("提纲草稿保存失败，请复制主问题后再刷新。"); }
   }, [storageReady, topic, framework, background, questionItems, planMeta, draftKey]);
+  useEffect(()=>{if(desktopJobId)try{localStorage.setItem(draftKey+".desktopJob",desktopJobId);}catch{}},[desktopJobId,draftKey]);
+  async function copyDesktopTask(){
+    const instruction=`请使用 StoryCue 技能处理网页待生成提纲。任务编号：${desktopJobId}。必须在启动此网页的同一份 StoryCue 项目根目录运行公开 CLI：先 pending，再 prompt --id ${desktopJobId}；按工具返回的选题和视频框架，由你使用当前宿主模型生成 3～5 个主问题，再 submit 回填。不要读取任何 Key 或凭据，不用文本 API 代替宿主，不直接改任务文件。若 pending 找不到此编号，先核对网页服务与技能是否用了不同的项目目录，不要另建任务或伪造回填。`;
+    try{await navigator.clipboard.writeText(instruction);setTaskCopied(true);}catch{setPlanError("复制失败。请在 WorkBuddy 中输入：使用 StoryCue 处理网页待生成提纲，任务编号 "+desktopJobId);}
+  }
   function setQuestions(value: string) {
     setEditingPlan(true);
     setQuestionItems(previous => value.split("\n").map(q => q.trim().slice(0, 180)).filter(Boolean).slice(0, 20).map((q, i) => previous.find(item => item.question === q) || guide.find(item => item.question === q) || { label: "自定义问题 " + (i + 1), question: q, notes: "根据实际回答，只追问一个与主题有关的细节。" }));
@@ -118,14 +125,16 @@ export function InterviewConsole({ mobile = false }: {mobile?: boolean}) {
     if (!topic.trim() || generating || isConnected || busy) return;
     const input = { topic: topic.trim(), framework, background: background.trim() };
     const controller = new AbortController();
-    planRequestRef.current = controller; setGenerating(true); setEditingPlan(true); setPlanError("");
+    planRequestRef.current = controller; setGenerating(true); setEditingPlan(true); setPlanError("");setDesktopJobId("");setTaskCopied(false);
     try {
       const response = await fetch(storycuePath("/api/trial/interview-plan"), { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(input), signal: AbortSignal.any([controller.signal, AbortSignal.timeout(90_000)]) });
       let data = await response.json();
       if (!response.ok) throw new Error(data.error || "生成失败，请重试。");
       if(response.status===202){
         setDesktopJobId(data.jobId);
+        const deadline=Date.now()+5*60_000;
         while(!controller.signal.aborted){
+          if(Date.now()>deadline)throw new Error("等待桌面 AI 回填已超过 5 分钟，已停止等待，任务仍保留。请在 WorkBuddy 发送此任务指令；完成后用下方“读取桌面 AI 提纲”恢复，不必重复创建任务。");
           await new Promise<void>((resolve,reject)=>{const abort=()=>{clearTimeout(timer);reject(new DOMException("Cancelled","AbortError"));};const timer=setTimeout(()=>{controller.signal.removeEventListener("abort",abort);resolve();},1500);controller.signal.addEventListener("abort",abort,{once:true});});
           const poll=await fetch(storycuePath("/api/trial/agent-plan/"+data.jobId),{signal:controller.signal,cache:"no-store"});
           if(!poll.ok)throw new Error("桌面任务读取失败，原提纲仍在。");
@@ -149,7 +158,7 @@ export function InterviewConsole({ mobile = false }: {mobile?: boolean}) {
     try{
       const response=await fetch(storycuePath("/api/trial/agent-plan/"+desktopJobId.trim()),{cache:"no-store"});
       const data=await response.json();if(!response.ok)throw new Error(data.error);
-      if(data.status!=="completed")throw new Error("桌面 AI 仍在处理，稍后再读取。");
+      if(data.status!=="completed")throw new Error("任务还在等待桌面 AI 回填，不能据此判断模型已开始。请先在 WorkBuddy 发送此任务指令，并核对使用的是同一个 StoryCue 项目目录。");
       const input=PlanInputSchema.parse(data),plan=GeneratedPlanSchema.parse(data);
       setTopic(input.topic);setFramework(input.framework);setBackground(input.background);setQuestionItems(plan.questions);setPlanMeta({...input,focus:plan.focus,source:"AI"});setEditingPlan(true);setPlanError("");
     }catch(error){setPlanError(error instanceof Error?error.message:"读取失败，原稿仍在。");}
@@ -283,10 +292,10 @@ export function InterviewConsole({ mobile = false }: {mobile?: boolean}) {
           <div className="sc-field"><label htmlFor="framework">视频框架</label><select id="framework" value={framework} disabled={isConnected || busy || generating} onChange={e => { setFramework(e.target.value as InterviewFramework); setEditingPlan(true); }}>{FRAMEWORK_IDS.map(id => <option key={id} value={id}>{FRAMEWORKS[id].name}</option>)}</select><p className="sc-subtle">{FRAMEWORKS[framework].summary}</p></div>
           <div className="sc-field"><label htmlFor="topic">本轮选题</label><textarea id="topic" value={topic} maxLength={240} rows={3} disabled={isConnected || busy || generating} onChange={e => { setTopic(e.target.value); setEditingPlan(true); }} placeholder="这条视频想聊什么？" /></div>
           <details className="sc-detail sc-background"><summary>补充嘉宾背景（可选）</summary><label htmlFor="guest-background">身份、接触的情况、希望面向谁</label><textarea id="guest-background" value={background} maxLength={1200} disabled={isConnected || busy || generating} onChange={e => { setBackground(e.target.value); setEditingPlan(true); }} placeholder="没有背景也能生成，实际经历在采访中确认。" /></details>
-          <button className="sc-button sc-button-primary sc-generate" disabled={!storageReady || !topic.trim() || busy || generating || isConnected} onClick={() => void generatePlan()}>{generating ? <Loader2 size={14} className="sc-spinner" /> : <Sparkles size={14} />}{generating ? "正在生成主问题…" : "确认选题并生成主问题"}</button>
+          <button className="sc-button sc-button-primary sc-generate" disabled={!storageReady || !topic.trim() || busy || generating || isConnected} onClick={() => void generatePlan()}>{generating&&!desktopJobId ? <Loader2 size={14} className="sc-spinner" /> : <Sparkles size={14} />}{generating ? (desktopJobId?"等待桌面 AI 回填（需发送指令）":desktopMode?"正在提交选题…":"正在生成主问题…") : "确认选题并生成主问题"}</button>
           {desktopMode ? <p className="sc-subtle">主问题由你自己的 WorkBuddy / Codex 生成，使用当前宿主的模型额度。</p> : null}
           {desktopMode&&!generating ? <details className="sc-detail sc-desktop-job"><summary>恢复桌面 AI 提纲</summary><label htmlFor="desktop-job">任务编号</label><input id="desktop-job" value={desktopJobId} onChange={e=>setDesktopJobId(e.target.value)} maxLength={36}/><button className="sc-button" disabled={!desktopJobId||isConnected} onClick={()=>void loadDesktopPlan()}>读取桌面 AI 提纲</button></details> : null}
-          {generating && desktopJobId ? <div role="status" className="sc-subtle"><p>等待桌面 AI · 任务 {desktopJobId}</p><p>在 WorkBuddy 或 Codex 中说“使用 StoryCue 处理网页待生成提纲”，完成后这里自动回填。</p><button className="sc-button" onClick={()=>{planRequestRef.current?.abort();setGenerating(false);}}>取消等待</button></div> : null}
+          {desktopMode&&desktopJobId&&(!planReady||generating) ? <div role="status" className="sc-subtle"><p style={{overflowWrap:"anywhere"}}>桌面 AI 待回填 · 任务 {desktopJobId}</p><p><strong>网页已建任务，但不会自动唤起 WorkBuddy。</strong>请复制下方指令，在 WorkBuddy / Codex 中发送一次；桌面 AI 才会使用当前账号的模型生成，完成后网页自动回填。</p><button className="sc-button" onClick={()=>void copyDesktopTask()}>{taskCopied?"指令已复制，去 WorkBuddy 发送":"复制给 WorkBuddy 的指令"}</button><p>如果 WorkBuddy 找不到此任务，请让它核对：技能执行目录是否与启动网页的项目目录一致。</p>{generating?<button className="sc-button" onClick={()=>{planRequestRef.current?.abort();setGenerating(false);}}>取消等待（任务保留）</button>:null}</div> : null}
           <p className="sc-subtle" role="status">{planReady ? (planMeta?.source === "AI" ? "主问题已生成，可逐题修改。" : "已有提纲，可修改或重新生成。") : "选题或背景已改变，请生成新问题，或编辑后确认提纲。"}</p>
           <p className="sc-eyebrow">主问题 / {context.questions.length}</p>
           <ol className="sc-outline">{context.questions.map((item, i) => <li key={i + "-" + item.text} data-current={isConnected && i === currentQuestionIndex}><span>{String(i + 1).padStart(2, "0")}</span><p>{item.text}</p></li>)}</ol>
@@ -298,7 +307,7 @@ export function InterviewConsole({ mobile = false }: {mobile?: boolean}) {
       <div className="sc-column sc-center-column">
         <div className="sc-plan-steps" aria-label="采访准备流程"><span>01 确认选题</span><ChevronRight size={12} /><span data-active={editingPlan}>02 生成与修改</span><ChevronRight size={12} /><span data-active={!editingPlan}>03 语音采访</span></div>
         {planError ? <p role="alert" className="sc-error">{planError}</p> : null}
-        {editingPlan && (!mobile || questionItems.length>0 || generating) ? <QuestionPlanEditor items={questionItems} focus={planReady ? planMeta?.focus : undefined} generating={generating} disabled={busy || isConnected} ready={!!topic.trim() && storageReady} onChange={setQuestionItems} onConfirm={confirmPlan} /> : !editingPlan ? <>
+        {editingPlan && (!mobile || questionItems.length>0 || generating) ? <QuestionPlanEditor items={questionItems} focus={planReady ? planMeta?.focus : undefined} generating={generating} awaitingDesktop={generating&&!!desktopJobId} disabled={busy || isConnected} ready={!!topic.trim() && storageReady} onChange={setQuestionItems} onConfirm={confirmPlan} /> : !editingPlan ? <>
         <button className="sc-button sc-edit-plan" disabled={isConnected || busy || generating} onClick={() => setEditingPlan(true)}>修改选题与主问题</button>
         <div className="sc-panel sc-session-meta"><span><Mic size={13} />{isConnected ? "本轮采访" : "准备开始新一轮"}<strong>{isConnected ? currentQuestionIndex + 1 : "—"}</strong> / {isConnected ? totalQuestions : context.questions.length}</span><span><Clock3 size={13} /><strong>{Math.floor(elapsed / 60)}:{String(elapsed % 60).padStart(2, "0")}</strong></span></div>
         <InterviewStage phase={phase} audioLevel={voice.audioLevel} playbackAnalyser={voice.playbackAnalyserRef} question={displayedQuestion} answer={isConnected ? voice.userTranscript || lastGuestAnswer : undefined} status={status}>
