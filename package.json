@@ -1,6 +1,6 @@
 {
   "name": "storycue",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "engines": {
     "node": ">=20.9.0"
   },
@@ -15,6 +15,7 @@
     "desktop:connect": "node --import tsx tools/storycue-desktop.ts connect",
     "desktop:login": "node --import tsx tools/storycue-desktop.ts login",
     "desktop:status": "node --import tsx tools/storycue-desktop.ts status",
+    "desktop:doctor": "node --import tsx tools/storycue-desktop.ts doctor",
     "audit:package": "node tools/audit-storycue.cjs"
   },
   "dependencies": {
@@ -42,6 +43,7 @@
     "@supabase/ssr": "^0.8.0",
     "@supabase/supabase-js": "^2.95.3",
     "@tanstack/react-query": "^4.43.0",
+    "@tencent-ai/codebuddy-code": "2.178.0",
     "@trpc/client": "^10.45.4",
     "@trpc/next": "^10.45.4",
     "@trpc/react-query": "^10.45.4",

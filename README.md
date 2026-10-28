@@ -66,7 +66,8 @@ npm ci
 # 在 WorkBuddy 中安装时：
 npm run desktop:connect -- --host workbuddy
 # 在 Codex 中安装时，把上一行改为 --host codex
-npm run desktop:login
+npm run desktop:doctor
+# 若提示未登录，先 desktop:login，再重新 desktop:doctor
 npm run dev
 ```
 
@@ -98,17 +99,21 @@ npm run dev
 
 1. 安装依赖 `npm ci`。在 WorkBuddy 安装时运行 `npm run desktop:connect -- --host workbuddy`；在 Codex 安装时用 `--host codex`。安装宿主应替用户执行这一步，不要省略。
 2. 运行 `npm run desktop:login`，在官方 CLI 完成登录。**桌面 App 已登录不保证独立 CLI 已登录**；账号和额度以该 CLI 当前登录配置为准，不保证不同产品套餐自动互通。不读取、提取或复制桌面 App Token。
-3. `npm run desktop:status` 检查已连接的宿主；然后 `npm run dev`。状态只表示入口已找到，实际生成会进一步核验登录与模型可用性。
+3. **必须运行 `npm run desktop:doctor` 做真实模型检查**，成功返回 `verified:true` 和 3–5 题数量后再启动 `npm run dev`。`desktop:status` 的 configured 仅表示文件存在，不能作为安装验收；verified 是最近 24 小时与当前配置匹配的实际调用记录，不保证后续网络或额度永远可用。
 4. 网页输入选题、选择方向、点击“确认选题并生成主问题”。服务自动调用对应 CLI，严格检查方向和格式，自动回填 3–5 题；用户仍可手动修改、确认并开始采访。
 
-优先寻找 PATH 中可独立运行的官方 codebuddy，再寻找正在运行的 WorkBuddy 安装包内入口。App 自带精简入口可能没有交互登录界面，此时先运行 `npm install -g @tencent-ai/codebuddy-code` 安装官方 CLI，再重新连接和登录；也可用 `npm run desktop:connect -- --host workbuddy --cli <实际官方入口>` 指定路径。Codex 使用已安装的官方 codex CLI。连接配置仅保存在本机 `.storycue-data/desktop-bridge.json`，不进入 Git，换电脑需要重新连接。 连接时会从本机 CLI 的 `--help` 列表优先选择已列出的快速模型，仅用于 StoryCue，不修改桌面 App 全局模型；也可用 `--model <CLI实际支持的模型ID>` 指定。
+**0.2.1 修复 WorkBuddy 内置精简入口误连接：** `npm ci` 会安装固定版本 `@tencent-ai/codebuddy-code@2.178.0`，优先连接项目内完整官方 CLI，不再自动使用 App 内置精简入口。CLI 作为外部依赖按其自身许可和服务条款提供，不包含登录凭据。即使 WorkBuddy 桌面窗口已经登录，独立 CLI 仍可能需要一次官方登录。连接、登录、生成使用相同的独立 CLI 配置，隔离桌面进程内部 profile / lite、SERVER__ 服务端口及 CLIENT_INFO 身份参数；需要自定义官方配置目录时显式传 `--config-dir <目录>`，不提取 App Token。
+
+Codex 使用本机已安装的官方 CLI；支持 npm 包入口和原生可执行文件。连接配置仅存于本机 `.storycue-data/desktop-bridge.json`，不进入 Git。连接时从 CLI 支持列表选择快速模型，不修改桌面 App 全局设置；可用 `--model <支持的模型ID>` 或 `--cli <官方完整入口>` 显式指定。
 
 调用经过 `pending → running → completed/failed` 状态。未连接直接提示接入方法，不创建无限等待任务；未登录、额度不足、CLI 版本不兼容、空输出、提纲不合格或超过 150 秒都会终止并明确提示。没有暗中改用 API 生成，不切换到另一个账号来源。主问题调用仅允许本机页面；手机/公网远程调用这层需要另加认证与受控代理。
 
-**验收范围：** Windows 本机已分别完成 Codex 与 WorkBuddy/CodeBuddy 的真实网页全链路：点击 → 官方 CLI 模型生成 → 四题自动回填 → 手动修改 → 刷新保留。WorkBuddy/CodeBuddy 使用官方 CLI 2.178.0、其列表支持的 `deepseek-v4.1-flash`，该次网页全流程约 21 秒；Codex 该次约 151 秒，包含页面等待与编辑校验。这是单次实测，不保证每次速度。另有未登录、空输出、重复提交及超时等回归。
+**0.2.1 本轮验收：** 在原生 WorkBuddy 安装中复现精简入口、服务端口冲突和客户端身份变量干扰，并加入对应修复。完整官方 CLI 真实检查返回4题；带上述宿主变量的独立生产网页点击 → 模型生成 → 4题回填 → 手改 → 刷新保留通过，该次全流程约10秒。14项发布回归、20项相关开发回归及生产构建通过。原生 WorkBuddy 最终页面复验中止，仍待完成，不把独立网页测试当作原生完整验收。
+
+**历史验收（0.2.0）：** Windows 本机已分别完成 Codex 与 WorkBuddy/CodeBuddy 的真实网页全链路：点击 → 官方 CLI 模型生成 → 四题自动回填 → 手动修改 → 刷新保留。WorkBuddy/CodeBuddy 使用官方 CLI 2.178.0、其列表支持的 `deepseek-v4.1-flash`，该次网页全流程约 21 秒；Codex 该次约 151 秒，包含页面等待与编辑校验。这是单次实测，不保证每次速度。另有未登录、空输出、重复提交及超时等回归。
 
 
-从 0.1.x 升级：保留 `.env.local`、`.storycue-data` 和浏览器访谈记录，更新源码与 `skills/storycue/SKILL.md` 后重新安装依赖，执行一次 `desktop:connect`；CLI 尚未登录时再执行 `desktop:login`，最后重启 StoryCue。只更新旧技能或刷新旧页面不能接通自动调用。
+从 0.1.x / 0.2.0 升级：保留 `.env.local`、`.storycue-data` 和浏览器访谈记录，更新源码与 `skills/storycue/SKILL.md` 后运行 `npm ci` 安装完整 CLI，执行一次 `desktop:connect` 和 `desktop:doctor`；CLI 尚未登录时再执行 `desktop:login`，登录后重新 doctor，最后重启 StoryCue。旧精简入口配置不能沿用。只更新旧技能或刷新旧页面不能接通自动调用。
 
 高级手动兼容：仅在主动设置 `STORYCUE_DESKTOP_HOST=manual` 时保留旧的“宿主读 pending / prompt / submit”协议和网页复制指令入口。`skills/storycue/SKILL.md` 仍保留检查/恢复工具。旧任务未回填时，可以让原安装宿主在同一项目目录检查编号；不要另建任务冒充恢复。正常自动模式不需要这些逐次操作。
 

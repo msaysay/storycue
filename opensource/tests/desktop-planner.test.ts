@@ -1,9 +1,10 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import {mkdtemp,writeFile,readFile} from "node:fs/promises";
+import {mkdtemp,writeFile,mkdir} from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import {callDesktopPlanner,classifyDesktopFailure,runDesktopPlan} from "../../server/desktop-planner";
+import {callDesktopPlanner,classifyDesktopFailure,runDesktopPlan,desktopChildEnvironment,saveDesktopBridge,desktopBridgeStatus,recordDesktopVerification} from "../../server/desktop-planner";
+import {locateOfficialCli} from "../../tools/desktop-cli-location";
 import {createPlanJob,readPlanJob,completePlanJob} from "../../server/storycue-agent-jobs";
 import {POST as generate} from "../../src/app/api/trial/interview-plan/route";
 const plan={focus:"了解企业老板培训后做个人IP实际遇到的卡点与判断依据",questions:[
@@ -14,6 +15,29 @@ const plan={focus:"了解企业老板培训后做个人IP实际遇到的卡点�
 ]};
 const input={topic:"老板培训后为什么做不成IP？",framework:"北极星" as const,background:""};
 async function fixture(source:string){const dir=await mkdtemp(path.join(os.tmpdir(),"storycue-cli-fixture-"));const cli=path.join(dir,"fixture.mjs");await writeFile(cli,source);return{host:"workbuddy" as const,cli,nodeEntry:true,lite:false};}
+
+test("project-local official CLI wins over a host App executable and npm codex shims resolve correctly",async()=>{
+ const root=await mkdtemp(path.join(os.tmpdir(),"storycue-locate-"));await writeFile(path.join(root,"package.json"),'{}');
+ const pkg=path.join(root,"node_modules/@tencent-ai/codebuddy-code");await mkdir(path.join(pkg,"bin"),{recursive:true});await writeFile(path.join(pkg,"package.json"),JSON.stringify({name:"@tencent-ai/codebuddy-code",version:"2.178.0"}));await writeFile(path.join(pkg,"bin/codebuddy"),"#!/usr/bin/env node");
+ assert.equal(locateOfficialCli("workbuddy",root,""),path.join(pkg,"bin/codebuddy"));
+ if(process.platform==="win32"){
+  const old=process.env.CODEX_APP_RUNTIME_CLI_PATH;delete process.env.CODEX_APP_RUNTIME_CLI_PATH;
+  try{await writeFile(path.join(root,"codex.cmd"),"fixture");await mkdir(path.join(root,"node_modules/@openai/codex/bin"),{recursive:true});const codex=path.join(root,"node_modules/@openai/codex/bin/codex.js");await writeFile(codex,"fixture");assert.equal(locateOfficialCli("codex",root,root),codex);}
+  finally{if(old!==undefined)process.env.CODEX_APP_RUNTIME_CLI_PATH=old;}
+ }
+});
+
+test("WorkBuddy App internal profile and lite flags cannot leak into the independent CLI",async()=>{
+ const config=await fixture("");const vars={CODEBUDDY_CONFIG_DIR:"fixture-app-profile",CODEBUDDY_FORCE_LITE_WB_BUNDLE:"1",WORKBUDDY_SESSION:"fixture-session",SERVER__PORT:"51446",CLIENT__AUTH:"fixture-private-client-auth",CLIENT_INFO:"fixture-app-client",CLIENT_INFO_PRODUCT_NAME:"WorkBuddy"};const old=Object.fromEntries(Object.keys(vars).map(k=>[k,process.env[k]]));Object.assign(process.env,vars);
+ try{const env=desktopChildEnvironment(config);for(const key of Object.keys(vars))assert.equal(env[key],undefined);assert.equal(desktopChildEnvironment({...config,configDir:"explicit-profile"}).CODEBUDDY_CONFIG_DIR,"explicit-profile");await assert.rejects(()=>callDesktopPlanner({...config,lite:true},input),/旧版 WorkBuddy 精简入口/);}
+ finally{for(const[k,v]of Object.entries(old)){if(v===undefined)delete process.env[k];else process.env[k]=v;}}
+});
+
+test("entry discovery is not verification, and changing model invalidates a prior successful check",async()=>{
+ const old=process.env.STORYCUE_DATA_DIR;process.env.STORYCUE_DATA_DIR=await mkdtemp(path.join(os.tmpdir(),"storycue-verified-"));
+ try{const config=await fixture("");await saveDesktopBridge(config);assert.equal((await desktopBridgeStatus()).verified,false);await recordDesktopVerification(config);assert.equal((await desktopBridgeStatus()).verified,true);await saveDesktopBridge({...config,model:"other-model"});assert.equal((await desktopBridgeStatus()).verified,false);await recordDesktopVerification({...config,model:"other-model"},"未登录");assert.equal((await desktopBridgeStatus()).verified,false);}
+ finally{if(old===undefined)delete process.env.STORYCUE_DATA_DIR;else process.env.STORYCUE_DATA_DIR=old;}
+});
 test("actual CLI subprocess receives prompt and strict no-tools flags, not the interview API keys",async()=>{
  const before=process.env.DOUBAO_API_KEY;process.env.DOUBAO_API_KEY="fixture-private-speech-key";
  try{
@@ -27,6 +51,7 @@ test("auth and timeout failures stop instead of waiting forever or echoing diagn
  const hung=await fixture(`setInterval(()=>{},1000);`);await assert.rejects(()=>callDesktopPlanner(hung,input,150),/已停止本次调用/);
  assert.match(classifyDesktopFailure("429 insufficient quota secret",1),/额度/);
  assert.ok(!classifyDesktopFailure('{"usage":{"credits":12},"total_cost_usd":0.01}',0).includes("额度"));
+ assert.match(classifyDesktopFailure('listen EADDRINUSE 127.0.0.1:51446',1),/启动端口被占用/);
 });
 test("CodeBuddy JSON message arrays expose the terminal result, not usage metadata",async()=>{
  const config=await fixture(`console.log(JSON.stringify([{type:'message',role:'user',content:'fixture'},{type:'message',role:'assistant',content:'fixture'},{type:'result',subtype:'success',is_error:false,result:JSON.stringify(${JSON.stringify(plan)}),usage:{credits:12}}],null,2));`);

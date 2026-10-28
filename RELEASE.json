@@ -1,6 +1,6 @@
 {
   "name": "storycue",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "defaultPlanProvider": "desktop",
   "defaultJevEnabled": false,
   "containsPublisherCredentials": false

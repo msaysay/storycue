@@ -13,9 +13,10 @@ description: 使用 StoryCue 访谈搭子生成可编辑主问题，准备实时
 
 1. `npm ci`。
 2. 你运行在 WorkBuddy 时执行 `npm run desktop:connect -- --host workbuddy`；你运行在 Codex 时执行 `npm run desktop:connect -- --host codex`。不能擅自替用户换成另一个宿主或发布者 API。工具会从 CLI 本机列表选已列出的快速模型，可用 --model 指定，连接回执会告知本次选择，不改桌面 App 全局模型。
-3. `npm run desktop:status` 确认入口连接。若生成报告未登录，引导用户在官方交互终端运行 `npm run desktop:login` 完成一次登录；不要读取/复制 auth 文件、Token、API Key，不要求用户把凭据发到对话。桌面 App 登录不代表 CLI 登录，套餐额度以 CLI 当前账号为准，不承诺自动共享。
+3. **必须执行 `npm run desktop:doctor`，它会真的调用当前 CLI 模型并校验提纲。** `desktop:status` 的 configured 只表示入口存在；doctor 返回 verified:true 才是本次检查成功。若未登录，引导用户在官方交互终端运行 `npm run desktop:login` 完成一次登录，然后重新 doctor；不要读取/复制 auth 文件、Token、API Key，不要求用户把凭据发到对话。桌面 App 登录不代表 CLI 登录，套餐额度以 CLI 当前账号为准，不承诺自动共享。
 4. 启动 `npm run dev`。网页生成应自动调用 CLI 并回填，正常模式不需要每次在聊天里发送任务指令。不要只装技能就声称自动接通。
-5. 若找不到 WorkBuddy CLI，先启动已安装 WorkBuddy 以发现其官方入口，或安装官方 CodeBuddy CLI；可用 `--cli <实际官方入口>` 指定。不要提取桌面客户端的内部认证来绕过登录。
+5. 0.2.1 起 `npm ci` 安装固定版本的完整官方 CodeBuddy CLI，连接优先使用项目内入口，不再自动寻找 WorkBuddy App 内置精简入口。不要使用 App 的精简 CLI 路径，也不要提取内部认证绕过登录。自定义入口可用 `--cli <实际官方入口>`；自定义官方 CLI 配置目录须显式 `--config-dir <目录>`，不继承 WorkBuddy 进程内部 profile 或 lite 参数。
+6. 启动后必须从真实网页输入选题，点击生成，检查自动回填 3–5 个问题、手动修改和刷新保留，再声明“安装验收通过”。`npm test`、HTTP 200、找到 CLI、任务已创建，都不能替代这一步。保留失败回执，不能写假 JSON、手动 submit 或注入浏览器状态冒充自动生成。需要重启时只处理本项目且先核对无活动采访。
 
 主问题只调用用户已连接的本机官方 CLI，不读取采访服务的 Key。语音/即时追问 API 配置与这层独立。真实验收必须从网页点击到模型生成、自动回填、手动修改；测试假 JSON 只能叫回归，不能冒充实际宿主输出。
 
@@ -47,4 +48,4 @@ description: 使用 StoryCue 访谈搭子生成可编辑主问题，准备实时
 
 ## 升级用户
 
-0.1.x 用户必须更新源码和本技能，保留 .env.local、.storycue-data 及现有浏览器记录，再执行一次 desktop:connect。不要删除旧任务/记录。仅刷新页面或继续使用旧的手动技能，不算升级成功。
+0.1.x / 0.2.0 用户必须更新源码和本技能，保留 .env.local、.storycue-data 及现有浏览器记录，再 npm ci、desktop:connect 和 desktop:doctor，随后重启本项目服务。旧精简入口配置不能沿用。不要删除旧任务/记录。仅刷新页面、npm test 或继续使用旧的手动技能，不算升级成功。
