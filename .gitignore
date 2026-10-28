@@ -1,0 +1,16 @@
+node_modules/
+.next*/
+out/
+.env*
+!.env.example
+.storycue-data/
+.storycue-work/
+*.log
+*.tsbuildinfo
+next-env.d.ts
+*.pem
+*.key
+*.pfx
+*.p12
+*.zip
+.DS_Store
