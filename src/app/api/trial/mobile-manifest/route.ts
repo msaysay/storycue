@@ -1,0 +1,2 @@
+import { storycuePath } from "@/lib/voice/storycue-path";
+export function GET(){return Response.json({id:storycuePath("/trial/mobile"),name:"StoryCue 访谈搭子",short_name:"StoryCue",lang:"zh-CN",start_url:storycuePath("/trial/mobile"),scope:storycuePath("/trial/mobile"),display:"standalone",background_color:"#060d18",theme_color:"#060d18",icons:[{src:storycuePath("/storycue.svg"),sizes:"any",type:"image/svg+xml",purpose:"any"}]},{headers:{"Content-Type":"application/manifest+json"}});}
