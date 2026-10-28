@@ -1,8 +1,11 @@
 import { callRelayLLM } from "../../../../../server/relay-llm";
 import { buildPlanPrompt, parseGeneratedPlan, PlanInputSchema, PlanDirectionError, validatePlanDirection } from "@/lib/voice/interview-plan";
 import { createPlanJob, planProvider } from "../../../../../server/storycue-agent-jobs";
+import { after } from "next/server";
+import { readDesktopBridge,desktopBridgeStatus,runDesktopPlan } from "../../../../../server/desktop-planner";
 
 export const runtime = "nodejs";
+export const maxDuration = 180;
 export async function POST(request: Request) {
   if (process.env.AURAL_LOCAL_TRIAL !== "1") return new Response(null, { status: 404 });
   const origin = request.headers.get("origin");
@@ -21,8 +24,16 @@ export async function POST(request: Request) {
   }
   try {
     if(planProvider()==="desktop"){
-      const job=await createPlanJob(input);
-      return Response.json({jobId:job.id,status:"pending",provider:"desktop"},{status:202,headers:{"Cache-Control":"no-store"}});
+      const manual=process.env.STORYCUE_DESKTOP_HOST==="manual";
+      if(!manual){
+        const url=new URL(request.url);let host:URL;try{host=new URL(`${url.protocol}//${request.headers.get("host")||url.host}`);}catch{return new Response(null,{status:403});}
+        if(!["localhost","127.0.0.1","[::1]"].includes(host.hostname))return Response.json({error:"自动调用本机桌面 AI 仅允许从本机页面发起；远程部署需要认证与受控代理。"},{status:403});
+      }
+      const config=await readDesktopBridge();
+      if(!manual&&(!config||!(await desktopBridgeStatus()).configured))return Response.json({error:"主问题的本机桌面 AI 尚未连接。请让安装此工具的 WorkBuddy/Codex 在同一项目目录执行 npm run desktop:connect -- --host workbuddy（Codex 用 --host codex）。连接并完成官方 CLI 一次登录后，网页才能自动生成；不需要主问题 API Key。",code:"desktop_not_connected"},{status:409});
+      const job=await createPlanJob(input,{automatic:!manual,host:config?.host});
+      if(!manual&&config)after(()=>runDesktopPlan(job.id,config));
+      return Response.json({jobId:job.id,status:"pending",provider:"desktop",automatic:!manual,host:config?.host},{status:202,headers:{"Cache-Control":"no-store"}});
     }
     const prompt = buildPlanPrompt(input);
     const raw = await callRelayLLM(prompt, 2600, undefined, request.signal);

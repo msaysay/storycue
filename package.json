@@ -1,17 +1,20 @@
 {
   "name": "storycue",
-  "version": "0.1.1",
+  "version": "0.2.0",
   "engines": {
     "node": ">=20.9.0"
   },
-  "description": "Voice interview companion with desktop-agent question planning",
+  "description": "Voice interview companion with automatic local desktop-AI question planning",
   "license": "MIT",
   "author": "StoryCue contributors",
   "scripts": {
     "dev": "node tools/start-storycue.mjs --dev",
     "build": "next build --webpack",
     "start": "node tools/start-storycue.mjs",
-    "test": "node --import tsx --test opensource/tests/open-source.test.ts",
+    "test": "node --import tsx --test opensource/tests/open-source.test.ts opensource/tests/desktop-planner.test.ts",
+    "desktop:connect": "node --import tsx tools/storycue-desktop.ts connect",
+    "desktop:login": "node --import tsx tools/storycue-desktop.ts login",
+    "desktop:status": "node --import tsx tools/storycue-desktop.ts status",
     "audit:package": "node tools/audit-storycue.cjs"
   },
   "dependencies": {

@@ -31,8 +31,8 @@ test("no Jev means automatic commit, no key/network requirement and no manual bu
  finally{if(before.enabled===undefined)delete process.env.STORYCUE_JEV_ENABLED;else process.env.STORYCUE_JEV_ENABLED=before.enabled;if(before.key===undefined)delete process.env.TYPESAFE_API_KEY;else process.env.TYPESAFE_API_KEY=before.key;}
 });
 test("desktop API queues without model calls; strict submit roundtrips and completed plans cannot be overwritten",async t=>{
- const dir=await mkdtemp(path.join(os.tmpdir(),"storycue-agent-test-"));const before={dir:process.env.STORYCUE_DATA_DIR,provider:process.env.STORYCUE_PLAN_PROVIDER,local:process.env.AURAL_LOCAL_TRIAL,url:process.env.NEXT_PUBLIC_APP_URL};
- Object.assign(process.env,{STORYCUE_DATA_DIR:dir,STORYCUE_PLAN_PROVIDER:"desktop",AURAL_LOCAL_TRIAL:"1",NEXT_PUBLIC_APP_URL:"http://127.0.0.1:3066"});
+ const dir=await mkdtemp(path.join(os.tmpdir(),"storycue-agent-test-"));const before={dir:process.env.STORYCUE_DATA_DIR,provider:process.env.STORYCUE_PLAN_PROVIDER,local:process.env.AURAL_LOCAL_TRIAL,url:process.env.NEXT_PUBLIC_APP_URL,host:process.env.STORYCUE_DESKTOP_HOST};
+ Object.assign(process.env,{STORYCUE_DATA_DIR:dir,STORYCUE_PLAN_PROVIDER:"desktop",STORYCUE_DESKTOP_HOST:"manual",AURAL_LOCAL_TRIAL:"1",NEXT_PUBLIC_APP_URL:"http://127.0.0.1:3066"});
  t.mock.method(globalThis,"fetch",async()=>{throw new Error("Desktop planning must not use a model API");});
  try{
   const r=await generate(new Request("http://127.0.0.1:3066/api/trial/interview-plan",{method:"POST",headers:{"Content-Type":"application/json",Origin:"http://127.0.0.1:3066"},body:JSON.stringify({topic:"老板培训后为什么做不成IP？",framework:"观点破题",background:""})}));assert.equal(r.status,202);const {jobId}=await r.json();
@@ -41,7 +41,7 @@ test("desktop API queues without model calls; strict submit roundtrips and compl
   const response=await poll(new Request("http://127.0.0.1:3066/api/trial/agent-plan/"+jobId),{params:Promise.resolve({id:jobId})});const value=await response.json();assert.deepEqual(value.questions,plan.questions);assert.equal(value.status,"completed");assert.equal((await pendingPlanJobs()).length,0);
   await assert.rejects(()=>readPlanJob("../../anything"));
   const other=await createPlanJob({topic:"方法起步",framework:"方法直给"});await assert.rejects(()=>completePlanJob(other.id,JSON.stringify(plan)));assert.equal((await readPlanJob(other.id)).status,"pending");
- }finally{for(const[k,v]of Object.entries({STORYCUE_DATA_DIR:before.dir,STORYCUE_PLAN_PROVIDER:before.provider,AURAL_LOCAL_TRIAL:before.local,NEXT_PUBLIC_APP_URL:before.url})){if(v===undefined)delete process.env[k];else process.env[k]=v;}}
+ }finally{for(const[k,v]of Object.entries({STORYCUE_DATA_DIR:before.dir,STORYCUE_PLAN_PROVIDER:before.provider,AURAL_LOCAL_TRIAL:before.local,NEXT_PUBLIC_APP_URL:before.url,STORYCUE_DESKTOP_HOST:before.host})){if(v===undefined)delete process.env[k];else process.env[k]=v;}}
 });
 test("local setup never returns secret values and cross-site config writes are refused",async()=>{
  const file=path.join(await mkdtemp(path.join(os.tmpdir(),"storycue-config-test-")),".env.local");const keys=["STORYCUE_OPEN_SOURCE","STORYCUE_CONFIG_FILE","DOUBAO_API_KEY","RELAY_LLM_API_KEY","RELAY_LLM_BASE_URL","RELAY_LLM_MODEL","RELAY_LLM_PROVIDER","RELAY_LLM_THINKING","TYPESAFE_API_KEY","STORYCUE_JEV_ENABLED"];const before=Object.fromEntries(keys.map(k=>[k,process.env[k]]));

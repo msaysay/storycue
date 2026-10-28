@@ -2,6 +2,7 @@ import { readFile,writeFile } from "node:fs/promises";
 import path from "node:path";
 import { parse } from "dotenv";
 import { z } from "zod";
+import { desktopBridgeStatus } from "./desktop-planner";
 const fields={speechKey:"DOUBAO_API_KEY",textKey:"RELAY_LLM_API_KEY",llmBaseUrl:"RELAY_LLM_BASE_URL",llmModel:"RELAY_LLM_MODEL",jevKey:"TYPESAFE_API_KEY"} as const;
 const text=z.string().trim().max(500).refine(s=>!/[\r\n\0]/.test(s));
 const modelBase=z.string().trim().max(500).url().refine(s=>{const u=new URL(s);return u.protocol==="https:"&&!u.username&&!u.password&&!u.search&&!u.hash&&!/\/chat\/completions\/?$/.test(u.pathname);}).transform(s=>s.replace(/\/+$/,""));
@@ -27,5 +28,5 @@ export async function setupStatus(){let saved:Record<string,string>={};try{saved
   const has=(key:string)=>!!(saved[key]||process.env[key]);
   const base=modelBase.safeParse(saved.RELAY_LLM_BASE_URL||process.env.RELAY_LLM_BASE_URL||defaultBase);
   const model=text.safeParse(saved.RELAY_LLM_MODEL||process.env.RELAY_LLM_MODEL||defaultModel);
-  return {speechConfigured:has("DOUBAO_API_KEY"),textConfigured:has("RELAY_LLM_API_KEY"),jevEnabled:(saved.STORYCUE_JEV_ENABLED||process.env.STORYCUE_JEV_ENABLED)==="1",llmBaseUrl:base.success?base.data:"",llmModel:model.success?model.data:""};
+  return {desktopBridge:await desktopBridgeStatus(),speechConfigured:has("DOUBAO_API_KEY"),textConfigured:has("RELAY_LLM_API_KEY"),jevEnabled:(saved.STORYCUE_JEV_ENABLED||process.env.STORYCUE_JEV_ENABLED)==="1",llmBaseUrl:base.success?base.data:"",llmModel:model.success?model.data:""};
 }

@@ -3,12 +3,12 @@ import { mkdir, readFile, readdir, writeFile, rename } from "node:fs/promises";
 import path from "node:path";
 import { buildPlanPrompt, parseGeneratedPlan, PlanInputSchema, validatePlanDirection, type PlanInput, type GeneratedPlan } from "../src/lib/voice/interview-plan";
 
-export type PlanJob = { id:string; createdAt:string; input:PlanInput; status:"pending"|"completed"; result?:GeneratedPlan };
+export type PlanJob = { id:string; createdAt:string; input:PlanInput; status:"pending"|"running"|"failed"|"completed"; automatic?:boolean; host?:"workbuddy"|"codex"; startedAt?:string; error?:string; result?:GeneratedPlan };
 function directory(){return path.join(process.env.STORYCUE_DATA_DIR || path.resolve(".storycue-data"),"plan-jobs");}
 function jobPath(id:string){if(!/^[0-9a-f-]{36}$/.test(id))throw new Error("无效任务编号");return path.join(directory(),id+".json");}
 export function planProvider(){return process.env.STORYCUE_PLAN_PROVIDER === "desktop" ? "desktop" : "api";}
-export async function createPlanJob(raw:unknown):Promise<PlanJob>{
-  const job:PlanJob={id:randomUUID(),createdAt:new Date().toISOString(),input:PlanInputSchema.parse(raw),status:"pending"};
+export async function createPlanJob(raw:unknown,execution:Pick<PlanJob,"automatic"|"host">={}):Promise<PlanJob>{
+  const job:PlanJob={id:randomUUID(),createdAt:new Date().toISOString(),input:PlanInputSchema.parse(raw),status:"pending",...execution};
   await mkdir(directory(),{recursive:true,mode:0o700});
   await writeFile(jobPath(job.id),JSON.stringify(job,null,2),{flag:"wx",mode:0o600});return job;
 }
@@ -19,8 +19,16 @@ export async function pendingPlanJobs(){
   return jobs.filter(j=>j.status==="pending").sort((a,b)=>b.createdAt.localeCompare(a.createdAt));
 }
 export async function planJobPrompt(id:string){const job=await readPlanJob(id);return {job,prompt:buildPlanPrompt(job.input)};}
+export async function startPlanJob(id:string){
+  await writeFile(jobPath(id)+".running","running",{flag:"wx",mode:0o600});
+  const job=await readPlanJob(id);if(job.status!=="pending")throw new Error("任务状态已变化");
+  const next:PlanJob={...job,status:"running",startedAt:new Date().toISOString()};
+  await writeJob(next);return next;
+}
+async function writeJob(job:PlanJob){const temp=jobPath(job.id)+"."+randomUUID()+".tmp";await writeFile(temp,JSON.stringify(job,null,2),{mode:0o600});await rename(temp,jobPath(job.id));}
+export async function failPlanJob(id:string,message:string){const job=await readPlanJob(id);if(job.status==="completed")return;await writeJob({...job,status:"failed",error:message});}
 export async function completePlanJob(id:string,raw:string){
-  const job=await readPlanJob(id);if(job.status!=="pending")throw new Error("任务已完成，请勿覆盖已确认提纲");
+  const job=await readPlanJob(id);if(!["pending","running"].includes(job.status))throw new Error("任务已结束，请勿覆盖已确认提纲");
   const result=validatePlanDirection(parseGeneratedPlan(raw),job.input.framework,job.input.background);
   const next:PlanJob={...job,status:"completed",result};
   // Only one desktop agent may commit; no last-writer-wins replacement.

@@ -1,5 +1,5 @@
 {
-  "createdAt": "2026-10-28T16:30:22.055Z",
+  "createdAt": "2026-10-28T17:28:37.277Z",
   "files": [
     "src\\app\\trial\\mobile\\page.tsx",
     "src\\app\\trial\\interview-console.tsx",
@@ -32,6 +32,7 @@
     "src\\app\\api\\trial\\interview-plan\\route.ts",
     "server\\relay-llm.ts",
     "server\\storycue-agent-jobs.ts",
+    "server\\desktop-planner.ts",
     "src\\app\\api\\trial\\turn-detector\\route.ts",
     "server\\jev-turn-taking.ts",
     "src\\app\\api\\trial\\editing-advice\\route.ts",

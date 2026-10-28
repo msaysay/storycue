@@ -291,3 +291,14 @@
 @keyframes sc-particle { 0%,100% { opacity:.08; transform:rotate(var(--angle)) translateY(calc(-1 * var(--particle-radius,140px))) scale(.7); } 50% { opacity:.6; transform:rotate(calc(var(--angle) + 8deg)) translateY(calc(-1 * var(--particle-radius,140px) - 12px)) scale(1.4); } }
 @media (max-width:760px) { .sc-interview-focus .sc-hud-ring { width:330px; height:330px; }.sc-interview-focus .sc-energy-disc { width:325px; height:325px; }.sc-interview-focus .sc-gyro-a { width:300px; height:300px; }.sc-interview-focus .sc-gyro-b { width:330px; height:330px; }.sc-interview-focus .sc-particles i { --particle-radius:147px; }.sc-hud-label { display:none; }.sc-interview-focus .sc-depth-grid { width:100%; } }
 @media (prefers-reduced-motion:reduce) { .sc-core-space * { animation:none!important; transition:none!important; }.sc-face-scan-volume,.sc-particles { display:none; }.sc-gyro-a { transform:rotateZ(-25deg) rotateX(64deg); }.sc-gyro-b { transform:rotateZ(38deg) rotateX(66deg); }.sc-mouth-bar,.sc-wave i { transform:none!important; } }
+
+/* Local setup keeps account connection distinct from speech and text providers. */
+.sc-setup h1{font-size:clamp(24px,4vw,32px);font-weight:700;line-height:1.3;margin-bottom:12px}
+.sc-setup .sc-panel{padding:24px;display:grid;gap:14px;margin-top:20px}
+.sc-setup h2{font-size:16px;font-weight:650;line-height:1.6;color:#d9faff;border-top:1px solid #21394b;padding-top:18px;margin-top:8px}
+.sc-setup p{font-size:13px;line-height:1.8;color:#b8cbdc}
+.sc-setup .sc-field{display:grid;gap:8px;margin:0}
+.sc-setup .sc-field label{font-size:13px}
+.sc-setup details{font-size:13px;line-height:1.8}
+.sc-setup code{font-size:12px;overflow-wrap:anywhere}
+@media(max-width:600px){.sc-setup .sc-panel{padding:18px;gap:12px}}
