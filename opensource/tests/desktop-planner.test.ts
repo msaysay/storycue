@@ -28,7 +28,7 @@ test("project-local official CLI wins over a host App executable and npm codex s
 });
 
 test("WorkBuddy App internal profile and lite flags cannot leak into the independent CLI",async()=>{
- const config=await fixture("");const vars={CODEBUDDY_CONFIG_DIR:"fixture-app-profile",CODEBUDDY_FORCE_LITE_WB_BUNDLE:"1",WORKBUDDY_SESSION:"fixture-session",SERVER__PORT:"51446",CLIENT__AUTH:"fixture-private-client-auth",CLIENT_INFO:"fixture-app-client",CLIENT_INFO_PRODUCT_NAME:"WorkBuddy"};const old=Object.fromEntries(Object.keys(vars).map(k=>[k,process.env[k]]));Object.assign(process.env,vars);
+ const config=await fixture("");const vars={NODE_ENV:"development",CODEBUDDY_CONFIG_DIR:"fixture-app-profile",CODEBUDDY_FORCE_LITE_WB_BUNDLE:"1",WORKBUDDY_SESSION:"fixture-session",SERVER__PORT:"51446",CLIENT__AUTH:"fixture-private-client-auth",CLIENT_INFO:"fixture-app-client",CLIENT_INFO_PRODUCT_NAME:"WorkBuddy"};const old=Object.fromEntries(Object.keys(vars).map(k=>[k,process.env[k]]));Object.assign(process.env,vars);
  try{const env=desktopChildEnvironment(config);for(const key of Object.keys(vars))assert.equal(env[key],undefined);assert.equal(desktopChildEnvironment({...config,configDir:"explicit-profile"}).CODEBUDDY_CONFIG_DIR,"explicit-profile");await assert.rejects(()=>callDesktopPlanner({...config,lite:true},input),/旧版 WorkBuddy 精简入口/);}
  finally{for(const[k,v]of Object.entries(old)){if(v===undefined)delete process.env[k];else process.env[k]=v;}}
 });
@@ -44,6 +44,13 @@ test("actual CLI subprocess receives prompt and strict no-tools flags, not the i
   const config=await fixture(`if(process.env.DOUBAO_API_KEY)process.exit(7);const a=process.argv; if(!a.includes('--tools')||a[a.indexOf('--tools')+1]!==''||!a.includes('--strict-mcp-config'))process.exit(8);console.log(JSON.stringify({type:'result',structured_output:${JSON.stringify(plan)}}));`);
   assert.deepEqual(JSON.parse(await callDesktopPlanner(config,input,3000)),plan);
  }finally{if(before===undefined)delete process.env.DOUBAO_API_KEY;else process.env.DOUBAO_API_KEY=before;}
+});
+
+test("Next dev and production modes do not change the independent CLI subprocess mode",async()=>{
+ const old=process.env.NODE_ENV;
+ try{const config=await fixture(`if(process.env.NODE_ENV)process.exit(9);console.log(JSON.stringify({type:'result',structured_output:${JSON.stringify(plan)}}));`);
+  for(const mode of ["development","production"]){Object.assign(process.env,{NODE_ENV:mode});assert.deepEqual(JSON.parse(await callDesktopPlanner(config,input,3000)),plan);}
+ }finally{if(old===undefined)Reflect.deleteProperty(process.env,"NODE_ENV");else Object.assign(process.env,{NODE_ENV:old});}
 });
 test("auth and timeout failures stop instead of waiting forever or echoing diagnostics",async()=>{
  const auth=await fixture(`console.error('Authentication required fixture-private-secret');`);

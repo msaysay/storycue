@@ -45,6 +45,8 @@ export function classifyDesktopFailure(text:string,exitCode:number|null){
 }
 export function desktopChildEnvironment(config:DesktopBridge){
   const env={...process.env};
+  // Next.js sets NODE_ENV. Keep CLI login and generation in the same standalone mode.
+  Reflect.deleteProperty(env,"NODE_ENV");
   // The planner must not inherit the interview's speech / text / optional semantic secrets.
   for(const key of Object.keys(env))if(/^(DOUBAO_|RELAY_LLM_|TYPESAFE_|KIMI_|MINIMAX_|GEMINI_|AZURE_)/.test(key))delete env[key];
   for(const key of Object.keys(env))if(key.startsWith("CODEX_")&&!["CODEX_HOME","CODEX_API_KEY"].includes(key))delete env[key];
