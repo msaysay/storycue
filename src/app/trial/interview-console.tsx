@@ -18,7 +18,9 @@ import { buildInterviewDirection, FRAMEWORKS, getFrameworkGuide, GUIDE, TOPIC, t
 import { appendRoundEntry, restoreTrialRounds, TRIAL_ROUNDS_KEY, LEGACY_TRANSCRIPT_KEY, type TrialEntry, type TrialRound } from "@/lib/voice/trial-rounds";
 import { availableTurnTaking, TRIAL_VOICES, type TurnTaking, type VoiceDelivery } from "@/lib/voice/trial-settings";
 
-import { FRAMEWORK_IDS, frameworkName } from "@/lib/voice/video-frameworks";
+import { FRAMEWORK_IDS, frameworkId, frameworkName } from "@/lib/voice/video-frameworks";
+
+type WorkbenchHandoff = { handoffId: string; topicId: string; revision: number; title: string; framework: InterviewFramework; background: string; scriptSha256: string; demo: boolean; status: "active" | "superseded" };
 
 const ROUND_STATUS = { active: "采访中", paused: "已暂停", completed: "已结束", interrupted: "连接已结束" };
 
@@ -51,6 +53,10 @@ export function InterviewConsole({ mobile = false }: {mobile?: boolean}) {
   const [desktopRunning,setDesktopRunning]=useState(false);
   const [taskCopied,setTaskCopied]=useState(false);
   const [showSetup,setShowSetup]=useState(false);
+  const [handoff,setHandoff]=useState<WorkbenchHandoff | null>(null);
+  const [handoffNote,setHandoffNote]=useState("");
+  const [returning,setReturning]=useState(false);
+  const generatePlanRef=useRef<(override?: {topic: string; framework: InterviewFramework; background: string}) => Promise<void>>(async () => {});
   const planRequestRef = useRef<AbortController | null>(null);
   const questions = questionItems.map(item => item.question).join("\n");
   const planReady = planMatches(planMeta, { topic, framework, background });
@@ -102,6 +108,7 @@ export function InterviewConsole({ mobile = false }: {mobile?: boolean}) {
     setStorageReady(true);
   }, [persist, storageReady]);
   useEffect(() => {
+    if (new URLSearchParams(window.location.search).get("handoff")) return;
     try {
       const saved = PlanDraftSchema.safeParse(JSON.parse(localStorage.getItem(draftKey) || "null"));
       if (saved.success) { const draft = saved.data; setTopic(draft.topic); setFramework(draft.framework); setBackground(draft.background); setQuestionItems(draft.items); setPlanMeta(draft.meta); }
@@ -110,7 +117,7 @@ export function InterviewConsole({ mobile = false }: {mobile?: boolean}) {
     return () => planRequestRef.current?.abort();
   }, [draftKey]);
   useEffect(() => {
-    if (!storageReady) return;
+    if (!storageReady || new URLSearchParams(window.location.search).get("handoff")) return;
     try { localStorage.setItem(draftKey, JSON.stringify({ topic, framework, background, items: questionItems, meta: planMeta })); }
     catch { setPlanError("提纲草稿保存失败，请复制主问题后再刷新。"); }
   }, [storageReady, topic, framework, background, questionItems, planMeta, draftKey]);
@@ -123,9 +130,9 @@ export function InterviewConsole({ mobile = false }: {mobile?: boolean}) {
     setEditingPlan(true);
     setQuestionItems(previous => value.split("\n").map(q => q.trim().slice(0, 180)).filter(Boolean).slice(0, 20).map((q, i) => previous.find(item => item.question === q) || guide.find(item => item.question === q) || { label: "自定义问题 " + (i + 1), question: q, notes: "根据实际回答，只追问一个与主题有关的细节。" }));
   }
-  async function generatePlan() {
-    if (!topic.trim() || generating || isConnected || busy) return;
-    const input = { topic: topic.trim(), framework, background: background.trim() };
+  async function generatePlan(override?: {topic: string; framework: InterviewFramework; background: string}) {
+    const input = { topic: (override?.topic ?? topic).trim().slice(0, 240), framework: override?.framework ?? framework, background: (override?.background ?? background).trim().slice(0, 1200) };
+    if (!input.topic || generating || isConnected || busy) return;
     const controller = new AbortController();
     planRequestRef.current = controller; setGenerating(true); setEditingPlan(true); setPlanError("");setDesktopJobId("");setTaskCopied(false);setDesktopAutomatic(false);setDesktopRunning(false);
     try {
@@ -149,6 +156,49 @@ export function InterviewConsole({ mobile = false }: {mobile?: boolean}) {
       setQuestionItems(plan.questions); setPlanMeta({ ...input, focus: plan.focus, source: "AI" });
     } catch (e) { if (!controller.signal.aborted) setPlanError(e instanceof Error && e.name === "TimeoutError" ? "生成等待超时，请重试。原提纲仍在。" : e instanceof Error ? e.message : "生成失败，请重试。"); }
     finally { if (planRequestRef.current === controller) { planRequestRef.current = null; setGenerating(false); } }
+  }
+  generatePlanRef.current = generatePlan;
+  useEffect(() => {
+    const id = new URLSearchParams(window.location.search).get("handoff");
+    if (!id) return;
+    const controller = new AbortController();
+    fetch(storycuePath("/api/trial/handoff/" + encodeURIComponent(id)), { signal: controller.signal, cache: "no-store" }).then(async response => {
+      const data = await response.json().catch(() => null);
+      if (!response.ok || !data?.ok) throw new Error(data?.error || "无法读取工作台交接。");
+      return data;
+    }).then(data => {
+      const selected = frameworkId(data.framework);
+      if (!selected) throw new Error("交接里的视频框架无法识别。");
+      const view: WorkbenchHandoff = { handoffId: String(data.handoffId), topicId: String(data.topicId), revision: Number(data.revision), title: String(data.title || "").trim().slice(0, 240), framework: selected, background: String(data.background || "").trim().slice(0, 1200), scriptSha256: String(data.scriptSha256 || ""), demo: data.demo === true, status: data.status === "superseded" ? "superseded" : "active" };
+      setHandoff(view); setTopic(view.title); setFramework(view.framework); setBackground(view.background); setQuestionItems([]); setPlanMeta(null); setEditingPlan(true); setPlanError("");
+    }).catch(error => { if (!controller.signal.aborted) setPlanError(error instanceof Error ? error.message : "无法读取工作台交接。"); });
+    return () => controller.abort();
+  }, []);
+  useEffect(() => {
+    if (!handoff || handoff.status !== "active") return;
+    const input = { topic: handoff.title, framework: handoff.framework, background: handoff.background };
+    let cancelled = false;
+    const timer = setTimeout(() => { if (!cancelled) void generatePlanRef.current(input); }, 0);
+    return () => { cancelled = true; clearTimeout(timer); };
+  }, [handoff]);
+  async function returnHandoff(download: boolean) {
+    if (!handoff || returning) return;
+    if (handoff.status === "superseded") { setHandoffNote("这次交接已被新的脚本取代，不能回传。请从工作台重新打开。"); return; }
+    const round = [...roundsRef.current].reverse().find(item => item.entries.some(entry => !entry.provisional && entry.text.trim()));
+    if (!round) { setHandoffNote("还没有已确认的访谈内容。完成一轮访谈并核对待校对字幕后再回传。"); return; }
+    setReturning(true); setHandoffNote("");
+    try {
+      const response = await fetch(storycuePath("/api/trial/handoff/" + encodeURIComponent(handoff.handoffId) + "/result"), { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ plan: { focus: planMeta?.focus || "", questions: questionItems.map(item => ({ label: item.label, question: item.question, notes: item.notes })) }, entries: round.entries.map((entry, index) => ({ id: "e" + (index + 1), role: entry.role, text: entry.text, at: entry.at, ...(entry.provisional ? { provisional: true } : {}) })), ...(round.advice ? { editingAdvice: round.advice } : {}) }) });
+      const data = await response.json().catch(() => null);
+      if (!response.ok) throw new Error(data?.error || "回传失败。");
+      if (download) {
+        const url = URL.createObjectURL(new Blob([JSON.stringify(data, null, 2)], { type: "application/json" }));
+        const link = document.createElement("a"); link.href = url; link.download = `storycue-${handoff.handoffId}.result.json`; link.click();
+        setTimeout(() => URL.revokeObjectURL(url), 1000);
+        setHandoffNote("已下载回传文件。也可以在工作台里手动上传这份 JSON。");
+      } else setHandoffNote("已回传工作台。");
+    } catch (error) { setHandoffNote(error instanceof Error ? error.message : "回传失败。"); }
+    finally { setReturning(false); }
   }
   function confirmPlan() {
     if (busy || generating || isConnected || !topic.trim() || questionItems.some(q => !q.question.trim()) || questionItems.length < 3 || questionItems.length > 5) return;
@@ -287,6 +337,7 @@ export function InterviewConsole({ mobile = false }: {mobile?: boolean}) {
     </header>
     {mobile ? <nav className="sc-mobile-progress" aria-label="访谈流程"><span data-active={!focusMode&&!resultRound}>01 选题与问题</span><span data-active={focusMode}>02 语音访谈</span><span data-active={!!resultRound}>03 访谈稿与建议</span></nav>:null}
     <div className="sc-intro"><div><p className="sc-eyebrow">INTERVIEW STUDIO / {FRAMEWORKS[framework].name}</p><h1>{topic.trim() || "这一轮，想聊什么？"}</h1></div><p className="sc-intro-note"><Radio size={13} />电脑提问，相机拍摄嘉宾</p></div>
+    {handoff ? <section className="sc-handoff" data-testid="workbench-handoff" aria-label="工作台交接"><p>{handoff.status === "superseded" ? "工作台已更新脚本，这次交接不能回传。请从工作台重新打开访谈。" : `已从工作台带入选题。主问题会自动生成，确认问题后再开始访谈。`}</p><div className="sc-handoff-actions"><button className="sc-button sc-button-primary" type="button" disabled={returning || handoff.status !== "active" || !rounds.some(round => round.entries.some(entry => !entry.provisional && entry.text.trim()))} onClick={() => void returnHandoff(false)}>回传工作台</button><button className="sc-button" type="button" disabled={returning || handoff.status !== "active" || !rounds.some(round => round.entries.some(entry => !entry.provisional && entry.text.trim()))} onClick={() => void returnHandoff(true)}>下载回传文件</button></div>{handoffNote ? <p role="status" className="sc-handoff-note">{handoffNote}</p> : null}</section> : null}
     {focusMode ? <nav className="sc-focus-toolbar" aria-label="采访快捷操作"><span><span className="sc-dot" />{isPaused ? "已暂停" : "本轮采访"} · {currentQuestionIndex + 1}/{context.questions.length} · {Math.floor(elapsed / 60)}:{String(elapsed % 60).padStart(2, "0")}</span><div><button className="sc-button" aria-pressed={drawer === "outline"} onClick={() => setDrawer(drawer === "outline" ? null : "outline")}><BookOpen size={14} />主问题</button><button className="sc-button" aria-pressed={drawer === "history"} onClick={() => setDrawer(drawer === "history" ? null : "history")}><FileText size={14} />问答记录</button>{drawer ? <button className="sc-button" aria-label="收起侧栏" onClick={() => setDrawer(null)}><X size={14} />收起</button> : null}</div></nav> : null}
     {mobile && drawer==="history" && !focusMode ? <section className="sc-panel sc-mobile-history" aria-label="历史访谈"><div className="sc-panel-heading"><h2>历史访谈</h2><button className="sc-button" onClick={()=>setDrawer(null)}>收起</button></div>{!rounds.length?<p>还没有访谈记录。</p>:[...rounds].reverse().map(round=><button className="sc-mobile-history-item" key={round.id} onClick={()=>{setResultRoundId(round.id);setDrawer(null);}}>{round.title}<small>{new Date(round.startedAt).toLocaleString("zh-CN")} · {round.entries.length} 段</small></button>)}</section>:null}
     {mobile && resultRound ? <InterviewResult key={resultRound.id} round={resultRound} onAdvice={saveAdvice} onConfirmEntry={confirmEntry} onNew={()=>{setResultRoundId(null);setEditingPlan(true);setDrawer(null);setError("");}}/> : null}
@@ -296,7 +347,7 @@ export function InterviewConsole({ mobile = false }: {mobile?: boolean}) {
           <div className="sc-panel-heading"><h2><BookOpen size={16} />{mobile ? "这次想聊什么？" : "采访提纲"}</h2><small>BRIEF</small></div>
           <div className="sc-field"><label htmlFor="framework">视频框架</label><select id="framework" value={framework} disabled={isConnected || busy || generating} onChange={e => { setFramework(e.target.value as InterviewFramework); setEditingPlan(true); }}>{FRAMEWORK_IDS.map(id => <option key={id} value={id}>{FRAMEWORKS[id].name}</option>)}</select><p className="sc-subtle">{FRAMEWORKS[framework].summary}</p></div>
           <div className="sc-field"><label htmlFor="topic">本轮选题</label><textarea id="topic" value={topic} maxLength={240} rows={3} disabled={isConnected || busy || generating} onChange={e => { setTopic(e.target.value); setEditingPlan(true); }} placeholder="这条视频想聊什么？" /></div>
-          <details className="sc-detail sc-background"><summary>补充嘉宾背景（可选）</summary><label htmlFor="guest-background">身份、接触的情况、希望面向谁</label><textarea id="guest-background" value={background} maxLength={1200} disabled={isConnected || busy || generating} onChange={e => { setBackground(e.target.value); setEditingPlan(true); }} placeholder="没有背景也能生成，实际经历在采访中确认。" /></details>
+          <details key={handoff?.handoffId ?? "local-background"} className="sc-detail sc-background" {...(handoff?.background ? { open: true } : {})}><summary>补充嘉宾背景（可选）</summary><label htmlFor="guest-background">身份、接触的情况、希望面向谁</label><textarea id="guest-background" value={background} maxLength={1200} disabled={isConnected || busy || generating} onChange={e => { setBackground(e.target.value); setEditingPlan(true); }} placeholder="没有背景也能生成，实际经历在采访中确认。" /></details>
           <button className="sc-button sc-button-primary sc-generate" disabled={!storageReady || !topic.trim() || busy || generating || isConnected} onClick={() => void generatePlan()}>{generating&&(!desktopJobId||desktopAutomatic) ? <Loader2 size={14} className="sc-spinner" /> : <Sparkles size={14} />}{generating ? (desktopJobId?(desktopAutomatic?(desktopRunning?"桌面 AI 正在生成主问题…":"正在启动本机桌面 AI…"):"等待桌面 AI 回填（需发送指令）"):desktopMode?"正在提交选题…":"正在生成主问题…") : "确认选题并生成主问题"}</button>
           {desktopMode ? <p className="sc-subtle">主问题由你自己的 WorkBuddy / Codex 生成，使用当前宿主的模型额度。</p> : null}
           {desktopMode&&!generating ? <details className="sc-detail sc-desktop-job"><summary>恢复桌面 AI 提纲</summary><label htmlFor="desktop-job">任务编号</label><input id="desktop-job" value={desktopJobId} onChange={e=>setDesktopJobId(e.target.value)} maxLength={36}/><button className="sc-button" disabled={!desktopJobId||isConnected} onClick={()=>void loadDesktopPlan()}>读取桌面 AI 提纲</button></details> : null}

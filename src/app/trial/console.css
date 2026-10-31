@@ -18,6 +18,10 @@
 .sc-eyebrow { display:flex; align-items:center; gap:7px; color:var(--sc-muted); font-size:10px; font-weight:500; letter-spacing:1.3px; line-height:1.6; text-transform:uppercase; margin:0; }
 .sc-intro h1 { font-size:clamp(20px,2vw,29px); line-height:1.45; letter-spacing:-.6px; margin:8px 0 0; font-weight:500; }
 .sc-intro-note { white-space:nowrap; color:var(--sc-muted); font-size:11px; display:flex; align-items:center; gap:6px; }
+.sc-handoff { display:grid; gap:10px; margin:-6px 0 18px; padding:14px 16px; border:1px solid #2a6d78; border-radius:14px; background:#0d2433; }
+.sc-handoff p { margin:0; color:#d5eaf3; font-size:13px; line-height:1.7; }
+.sc-handoff-actions { display:flex; flex-wrap:wrap; gap:8px; }
+.sc-handoff-note { color:#9fd7e4; }
 .sc-workspace { display:grid; grid-template-columns:230px minmax(0,1fr) 240px; gap:18px; align-items:start; }
 .sc-column { display:grid; gap:16px; min-width:0; }
 .sc-panel { background:linear-gradient(145deg,#0f1d2ee8,#0a1524ee); border:1px solid var(--sc-line); border-radius:18px; overflow:hidden; }
