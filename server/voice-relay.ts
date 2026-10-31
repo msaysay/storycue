@@ -86,7 +86,8 @@ process.on("unhandledRejection", (reason) => {
 
 // ── Configuration ───────────────────────────────────────────────────
 
-const RELAY_PORT = Number(process.env.VOICE_RELAY_PORT) || 8766;
+// 8866 keeps the relay off the workbench's 8766. VOICE_RELAY_PORT overrides it.
+const RELAY_PORT = Number(process.env.VOICE_RELAY_PORT) || 8866;
 
 // ASR config — X-Api-Key auth (new console) for ASR 2.0
 const ASR_APP_ID = process.env.DOUBAO_APP_ID || process.env.DOUBAO_APP_KEY || "";

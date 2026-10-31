@@ -66,7 +66,7 @@ interface RelayConnectorOptions<TJsonMessage extends Record<string, unknown>> {
   onPermanentFailure?: (error: Error) => void;
 }
 
-const DEFAULT_VOICE_RELAY_PORT = "8766";
+const DEFAULT_VOICE_RELAY_PORT = "8866";
 const DEFAULT_OPENAI_RELAY_PORT = "8767";
 const DEFAULT_VOICE_RELAY_PATH = "/ws/voice";
 const DEFAULT_OPENAI_RELAY_PATH = "/ws/openai-voice";

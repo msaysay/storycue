@@ -11,7 +11,7 @@
     "dev": "node tools/start-storycue.mjs --dev",
     "build": "next build --webpack",
     "start": "node tools/start-storycue.mjs",
-    "test": "node --import tsx --test opensource/tests/open-source.test.ts opensource/tests/desktop-planner.test.ts",
+    "test": "node --import tsx --test opensource/tests/open-source.test.ts opensource/tests/desktop-planner.test.ts opensource/tests/workbench-bridge.test.ts",
     "desktop:connect": "node --import tsx tools/storycue-desktop.ts connect",
     "desktop:login": "node --import tsx tools/storycue-desktop.ts login",
     "desktop:status": "node --import tsx tools/storycue-desktop.ts status",
